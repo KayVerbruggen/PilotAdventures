@@ -1,7 +1,10 @@
 #include <windows.h>
 #include <Xinput.h>
 #include <xaudio2.h>
+
+#if PROFILE
 #include <stdio.h>
+#endif
 
 #define i8 char
 #define i16 short
@@ -16,7 +19,6 @@
 #define f32 float
 #define f64 double
 
-// #include "math.h"
 // Include alle cpp bestanden hier.
 #include "math.cpp"
 #include "audio.cpp"
@@ -31,6 +33,7 @@ struct Tile_Map {
     i32 *tiles;
     Sprite ground;
     Sprite end;
+    Vector2f start_pos;
 };
 
 struct Player {
@@ -40,6 +43,12 @@ struct Player {
     f32 width, height;
     f32 speed;
 };
+
+#define NUM_LEVELS  2
+
+#define GROUND_TILE 1
+#define START_TILE 2
+#define END_TILE 3
 
 struct Game_State {
     Game_Input input;
@@ -51,14 +60,11 @@ struct Game_State {
     
     // Gameplay.
     Player player;
-    Tile_Map tile_map;
+    Tile_Map tile_maps[NUM_LEVELS];
+    i32 current_level = 0;
 };
 
-#define GROUND_TILE 1
-#define START_TILE 2
-#define END_TILE 3
-
-static Tile_Map load_tile_map(const char *filename, Player *player) {
+static Tile_Map load_tile_map(const char *filename) {
     Tile_Map result = {};
     
     Sprite level_design = load_bitmap(filename);
@@ -86,7 +92,7 @@ static Tile_Map load_tile_map(const char *filename, Player *player) {
                 }
                 if ((r == 0) && (g == 0) && (b == 255)) {
                     value = START_TILE;
-                    player->position =
+                    result.start_pos =
                         Vector2f(f32(x * result.tile_size), f32(y * result.tile_size));
                 }
                 if ((r == 255) && (g == 0) && (b == 255)) {
@@ -155,7 +161,7 @@ static i32 move_player(Tile_Map *tile_map, Player *player, f32 delta_time) {
     
     f32 t_remaining = 1.0f;
     
-    // // TODO(Kay Verbruggen): Hoe vaak moeten we deze loop uitvoeren.
+    // TODO(Kay Verbruggen): Hoe vaak moeten we deze loop uitvoeren.
     for (i32 i = 0; (i < 4) && (t_remaining > 0.0f); i++) {
         
         f32 t_lowest = 1.0f;
@@ -313,15 +319,19 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
     // Laad de plaatjes.
     Sprite background = load_bitmap("assets\\background.bmp");
     
+    // Laad de levels.
+    game.tile_maps[0] = load_tile_map("assets\\level.bmp");
+    game.tile_maps[1] = load_tile_map("assets\\level2.bmp");
+    
+    
     // Zet de speler.
     Sprite player_right = load_bitmap("assets\\player_right.bmp");
     Sprite player_left = load_bitmap("assets\\player_left.bmp");
+    game.player.position = game.tile_maps[game.current_level].start_pos;
     game.player.sprite = player_right;
     game.player.speed = 200.0f;
     game.player.width = (f32)player_left.width;
     game.player.height = (f32)player_left.height;
-    
-    game.tile_map = load_tile_map("assets\\level.bmp", &game.player);
     
     // Tekst.
     RECT text_rect = {};
@@ -399,13 +409,19 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
             game.player.velocity.y -= gravity *  game.delta_time;
         }
         
-        i32 col_tile = move_player(&game.tile_map, &game.player, game.delta_time);
+        i32 col_tile = move_player(&game.tile_maps[game.current_level], &game.player, game.delta_time);
         if (col_tile == END_TILE) {
-            if (MessageBoxA(0, "Je hebt het level gehaald!", "Sucess", MB_OK) == IDOK)
+            if ((MessageBoxA(0, "Je hebt het level gehaald!", "Sucess", MB_OKCANCEL) == IDOK) &&
+                (game.current_level < NUM_LEVELS)){
+                game.current_level++;
+                game.player.velocity = Vector2f();
+                game.player.position = game.tile_maps[game.current_level].start_pos;
+                move_player(&game.tile_maps[game.current_level], &game.player, game.delta_time);
+            } else {
                 game.running = false;
+            }
             
         }
-        
         
         if (game.player.velocity.x > 0.0f) {
             game.player.sprite = player_right;
@@ -416,16 +432,16 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
         draw_sprite(&game.window, &background);
         
         // De tilemap op het scherm zetten.
-        for (i32 y = 0; y < game.tile_map.height; y++) {
-            for (i32 x = 0; x < game.tile_map.width; x++) {
-                i32 tile = game.tile_map.tiles[y * game.tile_map.width + x];
+        for (i32 y = 0; y < game.tile_maps[game.current_level].height; y++) {
+            for (i32 x = 0; x < game.tile_maps[game.current_level].width; x++) {
+                i32 tile = game.tile_maps[game.current_level].tiles[y * game.tile_maps[game.current_level].width + x];
                 if (tile == GROUND_TILE) {
-                    draw_sprite(&game.window, &game.tile_map.ground,
-                                Vector2f(f32(x * game.tile_map.tile_size), f32(y * game.tile_map.tile_size)));
+                    draw_sprite(&game.window, &game.tile_maps[game.current_level].ground,
+                                Vector2f(f32(x * game.tile_maps[game.current_level].tile_size), f32(y * game.tile_maps[game.current_level].tile_size)));
                 } else if (tile == END_TILE) {
                     // TODO: Fix hardcoden van de deur offset op de y-as.
-                    draw_sprite(&game.window, &game.tile_map.end,
-                                Vector2f(f32(x * game.tile_map.tile_size), f32(y * game.tile_map.tile_size + 20)));
+                    draw_sprite(&game.window, &game.tile_maps[game.current_level].end,
+                                Vector2f(f32(x * game.tile_maps[game.current_level].tile_size), f32(y * game.tile_maps[game.current_level].tile_size + 20)));
                 }
             }
         }
@@ -436,14 +452,8 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
         QueryPerformanceCounter(&end_count);
         i64 delta_counter = end_count.QuadPart - start_count.QuadPart;
         game.delta_time = (f32)(delta_counter) / (f32)frequency.QuadPart;
-        if (game.delta_time < game.target_time) {
-            Sleep((DWORD)((game.target_time - game.delta_time) * 1000.0f));
-        }
         
-        QueryPerformanceCounter(&end_count);
-        delta_counter = end_count.QuadPart - start_count.QuadPart;
-        game.delta_time = (f32)(delta_counter) / (f32)frequency.QuadPart;
-        
+        // Profile performance hier, de sleep hoort niet bij de daadwerkelijke performance.
 #if PROFILE
         i64 end_cycles = __rdtsc();
         i64 fps = frequency.QuadPart / delta_counter;
@@ -454,6 +464,17 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
         OutputDebugStringA(buffer);
         start_cycles = end_cycles;
 #endif
+        
+        // Sleep zodat de game op een bepaald aantal fps runt,
+        // anders zou de game gewoon een hele core gebruiken. 
+        if (game.delta_time < game.target_time) {
+            Sleep((DWORD)((game.target_time - game.delta_time) * 1000.0f));
+        }
+        
+        QueryPerformanceCounter(&end_count);
+        delta_counter = end_count.QuadPart - start_count.QuadPart;
+        game.delta_time = (f32)(delta_counter) / (f32)frequency.QuadPart;
+        
         start_count = end_count;
     }
     
