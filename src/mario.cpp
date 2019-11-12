@@ -393,6 +393,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
         
         static f32 gravity = 10000.0f;
         
+        game.player.velocity = Vector2f();
         game.player.velocity =
             game.input.movement * game.player.speed;
         game.player.velocity.y -= gravity * game.delta_time;
@@ -414,9 +415,8 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
             if ((MessageBoxA(0, "Je hebt het level gehaald!", "Sucess", MB_OKCANCEL) == IDOK) &&
                 (game.current_level < NUM_LEVELS)){
                 game.current_level++;
-                game.player.velocity = Vector2f();
                 game.player.position = game.tile_maps[game.current_level].start_pos;
-                move_player(&game.tile_maps[game.current_level], &game.player, game.delta_time);
+                // move_player(&game.tile_maps[game.current_level], &game.player, game.delta_time);
             } else {
                 game.running = false;
             }
