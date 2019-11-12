@@ -393,7 +393,6 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
         
         static f32 gravity = 10000.0f;
         
-        game.player.velocity = Vector2f();
         game.player.velocity =
             game.input.movement * game.player.speed;
         game.player.velocity.y -= gravity * game.delta_time;
@@ -410,24 +409,13 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
             game.player.velocity.y -= gravity *  game.delta_time;
         }
         
-        i32 col_tile = move_player(&game.tile_maps[game.current_level], &game.player, game.delta_time);
-        if (col_tile == END_TILE) {
-            if ((MessageBoxA(0, "Je hebt het level gehaald!", "Sucess", MB_OKCANCEL) == IDOK) &&
-                (game.current_level < NUM_LEVELS)){
-                game.current_level++;
-                game.player.position = game.tile_maps[game.current_level].start_pos;
-                // move_player(&game.tile_maps[game.current_level], &game.player, game.delta_time);
-            } else {
-                game.running = false;
-            }
-            
-        }
-        
         if (game.player.velocity.x > 0.0f) {
             game.player.sprite = player_right;
         } else if (game.player.velocity.x < 0.0f) {
             game.player.sprite = player_left;
         }
+        
+        i32 col_tile = move_player(&game.tile_maps[game.current_level], &game.player, game.delta_time);
         
         draw_sprite(&game.window, &background);
         
@@ -448,6 +436,20 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
         
         draw_sprite(&game.window, &game.player.sprite, game.player.position);
         update_window(&game.window);
+        
+        if (col_tile == END_TILE) {
+            // if ((MessageBoxA(0, "Je hebt het level gehaald!", "Sucess", MB_OKCANCEL) == IDOK) &&
+            if (game.current_level < NUM_LEVELS - 1) {
+                game.current_level++;
+                game.player.velocity = Vector2f();
+                game.player.position = game.tile_maps[game.current_level].start_pos;
+                // move_player(&game.tile_maps[game.current_level], &game.player, game.delta_time);
+            } else {
+                MessageBoxA(0, "Je hebt de game uitgespeeld!", "Sucess", MB_OK);
+                game.running = false;
+            }
+            
+        }
         
         QueryPerformanceCounter(&end_count);
         i64 delta_counter = end_count.QuadPart - start_count.QuadPart;
