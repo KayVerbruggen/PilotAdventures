@@ -61,7 +61,7 @@ struct Game_State {
     // Gameplay.
     Player player;
     Tile_Map tile_maps[NUM_LEVELS];
-    i32 current_level = 0;
+    i32 level = 0;
 };
 
 static Tile_Map load_tile_map(const char *filename) {
@@ -202,13 +202,14 @@ static i32 move_player(Tile_Map *tile_map, Player *player, f32 delta_time) {
                             wall_normal = Vector2f(0.0f, 1.0f);
                             final_tile = tile;
                         }
+                        
                     }
                 }
             }
         }
         
         player->position = player->position + delta_pos*t_lowest;
-        player->velocity = player->velocity - wall_normal*dot(player->position, wall_normal);
+        player->velocity = player->velocity - wall_normal*dot(player->velocity, wall_normal);
         delta_pos = delta_pos - wall_normal*dot(delta_pos, wall_normal);
         t_remaining -= t_lowest*t_remaining;
     }
@@ -327,7 +328,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
     // Zet de speler.
     Sprite player_right = load_bitmap("assets\\player_right.bmp");
     Sprite player_left = load_bitmap("assets\\player_left.bmp");
-    game.player.position = game.tile_maps[game.current_level].start_pos;
+    game.player.position = game.tile_maps[game.level].start_pos;
     game.player.sprite = player_right;
     game.player.speed = 200.0f;
     game.player.width = (f32)player_left.width;
@@ -391,22 +392,21 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
             }
         }
         
-        static f32 gravity = 10000.0f;
+        static f32 gravity = 500.0f;
         
-        game.player.velocity =
-            game.input.movement * game.player.speed;
+        game.player.velocity.x = game.input.movement.x * game.player.speed;
         game.player.velocity.y -= gravity * game.delta_time;
         
         // Spring systeem: https://www.youtube.com/watch?v=7KiK0Aqtmzc
         if (game.input.jump) {
-            game.player.velocity.y = 5000.0f;
+            game.player.velocity.y = 400.0f;
             game.input.jump = false;
         }
         
         if (game.player.velocity.y > 0.0f) {
-            game.player.velocity.y -= gravity * 1.0f * game.delta_time;
+            game.player.velocity.y -= gravity * 2.0f * game.delta_time;
         } else if  (game.player.velocity.y < 0.0f && !game.input.space) {
-            game.player.velocity.y -= gravity *  game.delta_time;
+            game.player.velocity.y -= gravity * game.delta_time;
         }
         
         if (game.player.velocity.x > 0.0f) {
@@ -415,41 +415,47 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
             game.player.sprite = player_left;
         }
         
-        i32 col_tile = move_player(&game.tile_maps[game.current_level], &game.player, game.delta_time);
+        Tile_Map current_tile_map = game.tile_maps[game.level];
+        i32 col_tile = move_player(&current_tile_map, &game.player, game.delta_time);
         
-        draw_sprite(&game.window, &background);
-        
-        // De tilemap op het scherm zetten.
-        for (i32 y = 0; y < game.tile_maps[game.current_level].height; y++) {
-            for (i32 x = 0; x < game.tile_maps[game.current_level].width; x++) {
-                i32 tile = game.tile_maps[game.current_level].tiles[y * game.tile_maps[game.current_level].width + x];
-                if (tile == GROUND_TILE) {
-                    draw_sprite(&game.window, &game.tile_maps[game.current_level].ground,
-                                Vector2f(f32(x * game.tile_maps[game.current_level].tile_size), f32(y * game.tile_maps[game.current_level].tile_size)));
-                } else if (tile == END_TILE) {
-                    // TODO: Fix hardcoden van de deur offset op de y-as.
-                    draw_sprite(&game.window, &game.tile_maps[game.current_level].end,
-                                Vector2f(f32(x * game.tile_maps[game.current_level].tile_size), f32(y * game.tile_maps[game.current_level].tile_size + 20)));
-                }
-            }
-        }
-        
-        draw_sprite(&game.window, &game.player.sprite, game.player.position);
-        update_window(&game.window);
-        
+        // Ga naar het volgende level als we het level hebben gehaald.
+        // TODO(Kay Verbruggen): Als we het level halen en menu of knop er tussen hebben om verder te gaan,
+        // blijft de delta tijd voorlopig oplopen, misschien moeten we hier een oplossing voor bedenken.
+        // Het kan ook zijn dat het probleem sowieso al niet meer bestaat als we een in-game menu hebben.
         if (col_tile == END_TILE) {
             // if ((MessageBoxA(0, "Je hebt het level gehaald!", "Sucess", MB_OKCANCEL) == IDOK) &&
-            if (game.current_level < NUM_LEVELS - 1) {
-                game.current_level++;
+            if (game.level < NUM_LEVELS - 1) {
+                game.level++;
                 game.player.velocity = Vector2f();
-                game.player.position = game.tile_maps[game.current_level].start_pos;
-                // move_player(&game.tile_maps[game.current_level], &game.player, game.delta_time);
+                game.player.position = game.tile_maps[game.level].start_pos;
+                // move_player(&game.tile_maps[game.level], &game.player, game.delta_time);
             } else {
                 MessageBoxA(0, "Je hebt de game uitgespeeld!", "Sucess", MB_OK);
                 game.running = false;
             }
             
         }
+        
+        
+        draw_sprite(&game.window, &background);
+        
+        // De tilemap op het scherm zetten.
+        for (i32 y = 0; y < current_tile_map.height; y++) {
+            for (i32 x = 0; x < current_tile_map.width; x++) {
+                i32 tile = current_tile_map.tiles[y * game.tile_maps[game.level].width + x];
+                if (tile == GROUND_TILE) {
+                    draw_sprite(&game.window, &game.tile_maps[game.level].ground,
+                                Vector2f(f32(x * current_tile_map.tile_size), f32(y * current_tile_map.tile_size)));
+                } else if (tile == END_TILE) {
+                    // TODO: Fix hardcoden van de deur offset op de y-as.
+                    draw_sprite(&game.window, &current_tile_map.end,
+                                Vector2f(f32(x * current_tile_map.tile_size), f32(y * current_tile_map.tile_size + 20)));
+                }
+            }
+        }
+        
+        draw_sprite(&game.window, &game.player.sprite, game.player.position);
+        update_window(&game.window);
         
         QueryPerformanceCounter(&end_count);
         i64 delta_counter = end_count.QuadPart - start_count.QuadPart;
