@@ -1,10 +1,7 @@
 #include <windows.h>
 #include <Xinput.h>
 #include <xaudio2.h>
-
-#if PROFILE
 #include <stdio.h>
-#endif
 
 #define i8 char
 #define i16 short
@@ -31,8 +28,7 @@
 struct Tile_Map {
     i32 width, height, tile_size;
     i32 *tiles;
-    Sprite ground;
-    Sprite end;
+    Sprite ground, end, coin;
     Vector2f start_pos;
 };
 
@@ -49,6 +45,7 @@ struct Player {
 #define GROUND_TILE 1
 #define START_TILE 2
 #define END_TILE 3
+#define COIN_TILE 4
 
 struct Game_State {
     Game_Input input;
@@ -62,6 +59,7 @@ struct Game_State {
     Player player;
     Tile_Map tile_maps[NUM_LEVELS];
     i32 level = 0;
+    i32 coin_count;
 };
 
 static Tile_Map load_tile_map(const char *filename) {
@@ -73,6 +71,7 @@ static Tile_Map load_tile_map(const char *filename) {
     result.tile_size = 32;
     result.ground = load_bitmap("assets\\grass.bmp");
     result.end = load_bitmap("assets\\door.bmp");
+    result.coin = load_bitmap("assets\\coin.bmp");
     result.tiles = (i32 *)VirtualAlloc(0, sizeof(i32) * result.width * result.height,
                                        MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     
@@ -90,13 +89,19 @@ static Tile_Map load_tile_map(const char *filename) {
                 if ((r == 0) && (g == 255) && (b == 0)) {
                     value = GROUND_TILE;
                 }
+                
                 if ((r == 0) && (g == 0) && (b == 255)) {
                     value = START_TILE;
                     result.start_pos =
                         Vector2f(f32(x * result.tile_size), f32(y * result.tile_size));
                 }
+                
                 if ((r == 255) && (g == 0) && (b == 255)) {
                     value = END_TILE;
+                }
+                
+                if ((r == 255) && (g == 255) && (b == 0)) {
+                    value = COIN_TILE;
                 }
             }
             
@@ -202,7 +207,6 @@ static i32 move_player(Tile_Map *tile_map, Player *player, f32 delta_time) {
                             wall_normal = Vector2f(0.0f, 1.0f);
                             final_tile = tile;
                         }
-                        
                     }
                 }
             }
@@ -263,7 +267,6 @@ LRESULT CALLBACK window_callback(HWND window, UINT msg, WPARAM wparam, LPARAM lp
             break;
         }
         
-        
         case WM_KEYUP: {
             if (!state->input.use_gamepad)
                 process_key_up(&state->input, (u32)wparam);
@@ -321,6 +324,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
     Sprite background = load_bitmap("assets\\background.bmp");
     
     // Laad de levels.
+    // TODO(Kay Verbruggen): Laad alle levels uit een mapje met FindFirstFile en FindNextFile.
     game.tile_maps[0] = load_tile_map("assets\\level.bmp");
     game.tile_maps[1] = load_tile_map("assets\\level2.bmp");
     
@@ -343,6 +347,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
     if (!AddFontResourceA("assets\\Kenney Future.ttf")) {
         MessageBoxA(0, "Failed to load fonts!", "Fonts", MB_OK);
     }
+    
     HFONT font =
         CreateFontA(24, 0, 0, 0, 500, 0, 0, 0, ANSI_CHARSET, OUT_DEFAULT_PRECIS,
                     CLIP_DEFAULT_PRECIS, NONANTIALIASED_QUALITY, DEFAULT_PITCH, "Kenney Future");
@@ -434,8 +439,20 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
                 game.running = false;
             }
             
-        }
+        } 
         
+        i32 player_tile_pos = (i32)(game.player.position.y/current_tile_map.tile_size) * current_tile_map.width + 
+            (i32)(game.player.position.x/current_tile_map.tile_size);
+        if ((player_tile_pos <= current_tile_map.width*current_tile_map.height) &&
+            (player_tile_pos > 0)) {
+            if (current_tile_map.tiles[player_tile_pos] == COIN_TILE) {
+                game.coin_count++;
+                char buffer[256];
+                _snprintf_s(buffer, 256, 256, "Coins: %d\n", game.coin_count);
+                OutputDebugStringA(buffer);
+                current_tile_map.tiles[player_tile_pos] = 0;
+            }
+        }
         
         draw_sprite(&game.window, &background);
         
@@ -450,6 +467,9 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
                     // TODO: Fix hardcoden van de deur offset op de y-as.
                     draw_sprite(&game.window, &current_tile_map.end,
                                 Vector2f(f32(x * current_tile_map.tile_size), f32(y * current_tile_map.tile_size + 20)));
+                } else if (tile == COIN_TILE) {
+                    draw_sprite(&game.window, &current_tile_map.coin,
+                                Vector2f(f32(x * current_tile_map.tile_size), f32(y * current_tile_map.tile_size)));
                 }
             }
         }
