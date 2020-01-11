@@ -6,7 +6,7 @@ struct Offscreen_Buffer {
     i32 pitch;
 };
 
-struct Game_Window {
+struct Window {
     u32 width, height;
     bool stretch_on_resize;
     bool resized;
@@ -77,9 +77,9 @@ static Sprite load_bitmap(const char *filename) {
     return sprite;
 }
 
-static void draw_sprite(Game_Window *window, Sprite *sprite, Vector2f pos = Vector2f(0.0f, 0.0f)) {
-    Vector2i min = Vector2i((i32)pos.x - (sprite->width/2), (i32)pos.y - (sprite->height/2));
-    Vector2i max = Vector2i((i32)pos.x + (sprite->width/2), (i32)pos.y + (sprite->height/2));
+static void draw_sprite(Window *window, Vector2f camera, Sprite *sprite, Vector2f pos = Vector2f(0.0f, 0.0f)) {
+    Vector2i min = Vector2i((i32)pos.x - (sprite->width/2), (i32)pos.y - (sprite->height/2)) - Vector2i(camera);
+    Vector2i max = Vector2i((i32)pos.x + (sprite->width/2), (i32)pos.y + (sprite->height/2)) - Vector2i(camera);
     
     Vector2i offset = Vector2i();
     if (min.x < 0) {
@@ -130,7 +130,7 @@ static void draw_sprite(Game_Window *window, Sprite *sprite, Vector2f pos = Vect
     }
 }
 
-static void resize_buffer(Game_Window *window) {
+static void resize_buffer(Window *window) {
     // Eerst moeten we het geheugen van de buffer legen als hier al iets in staat.
     if (window->buffer.memory) {
         VirtualFree(window->buffer.memory, 0, MEM_RELEASE);
@@ -162,7 +162,7 @@ static void resize_buffer(Game_Window *window) {
     window->buffer.pitch = window->buffer.width * window->buffer.bytes_per_pixel;
 }
 
-static void update_window(Game_Window *window) {
+static void update_window(Window *window) {
     StretchDIBits(window->device_context, 0, 0, window->width, window->height, 0, 0,
                   window->buffer.width, window->buffer.height, window->buffer.memory,
                   &window->buffer.info, DIB_RGB_COLORS, SRCCOPY);

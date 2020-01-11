@@ -49,6 +49,20 @@ struct Vector2f {
     Vector2f operator*(const Vector2f &other) { return Vector2f(x * other.x, y * other.y); }
     Vector2f operator/(const Vector2f &other) { return Vector2f(x / other.x, y / other.y); }
     
+    bool operator==(const Vector2f &other) { 
+        if ((other.x == x) && (other.y == y)) {
+            return true;
+        }
+        return false;
+    }
+    
+    bool operator!=(const Vector2f &other) { 
+        if ((other.x == x) && (other.y == y)) {
+            return false;
+        }
+        return true;
+    }
+    
     f32 Vector2f::length() { return sqrtf(x * x + y * y); }
     Vector2f Vector2f::normalize() { return *this * inv_sqrtf(x * x + y * y); }
 };
@@ -58,10 +72,17 @@ struct Vector2i {
         x = ix;
         y = iy;
     };
+    
+    Vector2i(Vector2f v) {
+        x = i32(v.x);
+        y = i32(v.y);
+    }
+    
     Vector2i() {
         x = 0;
         y = 0;
     }
+    
     i32 x, y;
     
     Vector2i operator*(const i32 &other) { return Vector2i(x * other, y * other); }
@@ -71,6 +92,21 @@ struct Vector2i {
     Vector2i operator-(const Vector2i &other) { return Vector2i(x - other.x, y - other.y); }
     Vector2i operator*(const Vector2i &other) { return Vector2i(x * other.x, y * other.y); }
     Vector2i operator/(const Vector2i &other) { return Vector2i(x / other.x, y / other.y); }
+    
+    bool operator==(const Vector2i &other) { 
+        if ((other.x == x) && (other.y == y)) {
+            return true;
+        }
+        return false;
+    }
+    
+    bool operator!=(const Vector2i &other) { 
+        if ((other.x == x) && (other.y == y)) {
+            return false;
+        }
+        return true;
+    }
+    
     
     f32 length() { return sqrtf((f32)(x * x + y * y)); }
     Vector2i normalize() { return *this * (i32)inv_sqrtf((f32)(x * x + y * y)); }
@@ -105,6 +141,21 @@ struct Vector3f {
         return Vector3f(x / other.x, y / other.y, z / other.z);
     }
     
+    bool operator==(const Vector3f &other) { 
+        if ((other.x == x) && (other.y == y) && (other.z == z)) {
+            return true;
+        }
+        return false;
+    }
+    
+    bool operator!=(const Vector3f &other) { 
+        if ((other.x == x) && (other.y == y) && (other.z == z)) {
+            return false;
+        }
+        return true;
+    }
+    
+    
     f32 length() { return sqrtf(x * x + y * y + z * z); }
     Vector3f normalize() { return *this * inv_sqrtf(x * x + y * y + z * z); }
 };
@@ -137,6 +188,22 @@ struct Vector3i {
     Vector3i operator/(const Vector3i &other) {
         return Vector3i(x / other.x, y / other.y, z / other.z);
     }
+    
+    
+    bool operator==(const Vector3i &other) { 
+        if ((other.x == x) && (other.y == y) && (other.z == z)) {
+            return true;
+        }
+        return false;
+    }
+    
+    bool operator!=(const Vector3i &other) { 
+        if ((other.x == x) && (other.y == y) && (other.z == z)) {
+            return false;
+        }
+        return true;
+    }
+    
     
     f32 length() { return sqrtf((f32)(x * x + y * y + z * z)); }
     Vector3i normalize() { return *this * (i32)inv_sqrtf((f32)(x * x + y * y + z * z)); }
