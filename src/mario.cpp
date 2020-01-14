@@ -33,7 +33,12 @@ struct Tile_Map {
 };
 
 struct Player {
-    Sprite sprite;
+    Animation walk_right;
+    Animation walk_left;
+    Animation current_anim;
+    
+    float frame;
+    
     f32 width, height;
     
     Vector2f position;
@@ -349,16 +354,37 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
     tile_maps[1] = load_tile_map("levels\\2.bmp");
     tile_maps[2] = load_tile_map("levels\\3.bmp");
     
-    // Maak de speler aan.
-    Sprite player_right = load_bitmap("assets\\player_right.bmp");
-    Sprite player_left = load_bitmap("assets\\player_left.bmp");
-    
     Player player = {};
     player.position = tile_maps[level].start_pos;
-    player.sprite = player_right;
+    
+    // Right animation
+    player.walk_right.sprites[0] = load_bitmap("assets\\walk_right\\0.bmp");
+    player.walk_right.sprites[1] = load_bitmap("assets\\walk_right\\1.bmp");
+    player.walk_right.sprites[2] = load_bitmap("assets\\walk_right\\2.bmp");
+    player.walk_right.sprites[3] = load_bitmap("assets\\walk_right\\3.bmp");
+    player.walk_right.sprites[4] = load_bitmap("assets\\walk_right\\4.bmp");
+    player.walk_right.sprites[5] = load_bitmap("assets\\walk_right\\5.bmp");
+    player.walk_right.sprites[6] = load_bitmap("assets\\walk_right\\6.bmp");
+    player.walk_right.sprites[7] = load_bitmap("assets\\walk_right\\7.bmp");
+    player.walk_right.fps = 8;
+    
+    
+    // Left animation
+    player.walk_left.sprites[0] = load_bitmap("assets\\walk_left\\0.bmp");
+    player.walk_left.sprites[1] = load_bitmap("assets\\walk_left\\1.bmp");
+    player.walk_left.sprites[2] = load_bitmap("assets\\walk_left\\2.bmp");
+    player.walk_left.sprites[3] = load_bitmap("assets\\walk_left\\3.bmp");
+    player.walk_left.sprites[4] = load_bitmap("assets\\walk_left\\4.bmp");
+    player.walk_left.sprites[5] = load_bitmap("assets\\walk_left\\5.bmp");
+    player.walk_left.sprites[6] = load_bitmap("assets\\walk_left\\6.bmp");
+    player.walk_left.sprites[7] = load_bitmap("assets\\walk_left\\7.bmp");
+    player.walk_left.fps = 8;
+    
+    player.current_anim = player.walk_right;
+    
     player.max_speed = 250.0f;
-    player.width = (f32)player_left.width;
-    player.height = (f32)player_left.height;
+    player.width = 33;
+    player.height = 56;
     
     Vector2f camera = Vector2f();
     Collision col = {};
@@ -426,12 +452,6 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
             player.acceleration.y -= gravity * 2.0f;
         } else if (player.velocity.y < 0.0f && !engine.input.space) {
             player.acceleration.y -= gravity;
-        }
-        
-        if (player.acceleration.x > 0.0f) {
-            player.sprite = player_right;
-        } else if (player.acceleration.x < 0.0f) {
-            player.sprite = player_left;
         }
         
         // Wrijving
@@ -502,7 +522,18 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
             }
         }
         
-        draw_sprite(&engine.window, camera, &player.sprite, player.position);
+        player.frame += engine.delta_time * player.current_anim.fps;
+        if (player.frame >= 8.0f)
+            player.frame = 0.0f;
+        
+        
+        if (player.velocity.x > 0.0f) {
+            player.current_anim = player.walk_right;
+        } else if (player.velocity.x < 0.0f) {
+            player.current_anim = player.walk_left;
+        }
+        
+        draw_sprite(&engine.window, camera, &player.current_anim.sprites[(u8)player.frame], player.position);
         update_window(&engine.window);
         
         QueryPerformanceCounter(&end_count);

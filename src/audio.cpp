@@ -10,6 +10,7 @@ static void initialize_audio(Audio *audio) {
     }
     
     audio->engine->CreateMasteringVoice(&audio->master_voice);
+    audio->master_voice->SetVolume(0.3f);
 }
 
 static void close_audio(Audio *audio) {

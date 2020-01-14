@@ -43,6 +43,11 @@ struct Sprite {
     u16 bits_per_pixel;
 };
 
+struct Animation {
+    Sprite sprites[8];
+    float fps;
+};
+
 static Sprite load_bitmap(const char *filename) {
     Sprite sprite = {};
     
@@ -78,6 +83,7 @@ static Sprite load_bitmap(const char *filename) {
 }
 
 static void draw_sprite(Window *window, Vector2f camera, Sprite *sprite, Vector2f pos = Vector2f(0.0f, 0.0f)) {
+    
     Vector2i min = Vector2i((i32)pos.x - (sprite->width/2), (i32)pos.y - (sprite->height/2)) - Vector2i(camera);
     Vector2i max = Vector2i((i32)pos.x + (sprite->width/2), (i32)pos.y + (sprite->height/2)) - Vector2i(camera);
     
@@ -107,6 +113,7 @@ static void draw_sprite(Window *window, Vector2f camera, Sprite *sprite, Vector2
         // Pak de pixel.
         u32 *dest = (u32 *)dest_row;
         u32 *source = source_row;
+        
         for (i32 x = min.x; x < max.x; x++) {
             // NOTE(Kay Verbruggen): Uitleg alpha kanaal.
             // Als het alpha kanaal 0 is, betekent dit dat de pixel transparant hoort te zijn.
