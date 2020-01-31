@@ -46,6 +46,7 @@ struct Sprite {
 struct Animation {
     Sprite sprites[8];
     float fps;
+    u8 id;
 };
 
 static Sprite load_bitmap(const char *filename) {

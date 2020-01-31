@@ -3,6 +3,7 @@ struct Input {
     bool space;
     bool jump;
     bool use_gamepad;
+    bool next;
 };
 
 // NOTE(Kay Verbruggen): += bij key_down en key_up, om te voorkomen dat je stil staat,
