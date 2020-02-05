@@ -412,11 +412,18 @@ void in_level(Engine *engine, Game *game) {
         engine->window.width = 1920;
         engine->window.height = 1080;
         resize_buffer(&engine->window);
+        free_sprite(&game->background);
         
-        if (game->level < NUM_LEVELS - 1)
+        if (game->level < NUM_LEVELS - 1) {
             game->state = LEVEL_COMPLETE;
-        else
+            game->level_complete = load_bitmap("assets\\level complete.bmp");
+        }
+        else {
             game->state = END;
+            game->end_game = load_bitmap("assets\\end game.bmp");
+        }
+        
+        return;
     }
     
     if (((i32)player->position.x <= (cur_map.width * cur_map.tile_size)) && 
@@ -437,7 +444,7 @@ void in_level(Engine *engine, Game *game) {
         }
     }
     
-    draw_sprite(&engine->window, game->camera, &game->background);
+    draw_sprite(&engine->window, game->camera, &game->background, Vector2f(0.0f, 200.0f));
     
     // De tilemap op het scherm zetten.
     for (i32 y = 0; y < cur_map.height; y++) {
@@ -491,7 +498,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
     engine.window.resized = false;
     engine.running = true;
     engine.input.use_gamepad = false;
-    engine.target_time = 1.0f / 240.0f;
+    engine.target_time = 1.0f / 60.0f;
     
     // Hier maken we het venster waarin we vervolgens onze engine in kunnen laten zien.
     WNDCLASSA wc = {};
@@ -590,10 +597,10 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
     game.coin_sound = load_sound(&engine.audio, "assets\\coin.wav");
     
     // Laad de plaatjes.
-    game.background = load_bitmap("assets\\background large.bmp");
     game.main_menu = load_bitmap("assets\\main menu.bmp");
-    game.level_complete = load_bitmap("assets\\level complete.bmp");
-    game.end_game = load_bitmap("assets\\end game.bmp");
+    // game.background = load_bitmap("assets\\background large optimized.bmp");
+    // game.level_complete = load_bitmap("assets\\level complete.bmp");
+    // game.end_game = load_bitmap("assets\\end game.bmp");
     
     // Laad de levels.
     // TODO(Kay Verbruggen): Laad alle levels uit een mapje met FindFirstFile en FindNextFile.
@@ -664,19 +671,28 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
                         engine.input.next = false;
                         game.state = IN_LEVEL;
                         SetCursor(normal_cursor);
+                        
+                        update_window(&engine.window);
+                        
                         engine.window.width = 640;
                         engine.window.height = 360;
                         resize_buffer(&engine.window);
+                        
+                        free_sprite(&game.main_menu);
+                        game.background = load_bitmap("assets\\background large optimized.bmp");
+                        break;
                     }
                 } else {
                     SetCursor(normal_cursor);
                 }
                 
+                update_window(&engine.window);
                 break;
             }
             
             case IN_LEVEL: {
                 in_level(&engine, &game);
+                update_window(&engine.window);
                 break;
             }
             
@@ -700,14 +716,21 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
                         game.level++;
                         game.player->position = game.tile_maps[game.level].start_pos;
                         
+                        update_window(&engine.window);
+                        
                         engine.window.width = 640;
                         engine.window.height = 360;
                         resize_buffer(&engine.window);
+                        
+                        free_sprite(&game.level_complete);
+                        game.background = load_bitmap("assets\\background large optimized.bmp");
+                        break;
                     }
                 } else {
                     SetCursor(normal_cursor);
                 }
                 
+                update_window(&engine.window);
                 break;
             }
             
@@ -726,20 +749,21 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
                     if (engine.input.next) {
                         engine.input.next = false;
                         game.state = MAIN_MENU;
+                        game.main_menu = load_bitmap("assets\\main menu.bmp");
                         SetCursor(normal_cursor);
                         
                         game.level = 0;
                         game.player->position = game.tile_maps[game.level].start_pos;
+                        free_sprite(&game.end_game);
                     }
                 } else {
                     SetCursor(normal_cursor);
                 }
                 
+                update_window(&engine.window);
                 break;
             }
         }
-        
-        update_window(&engine.window);
         
         QueryPerformanceCounter(&end_count);
         i64 delta_counter = end_count.QuadPart - start_count.QuadPart;

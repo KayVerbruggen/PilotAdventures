@@ -83,6 +83,12 @@ static Sprite load_bitmap(const char *filename) {
     return sprite;
 }
 
+static void free_sprite(Sprite* sprite) {
+    if (sprite->pixels) {
+        VirtualFree(sprite->pixels, 0, MEM_RELEASE);
+    }
+}
+
 static void draw_sprite(Window *window, Vector2f camera, Sprite *sprite, Vector2f pos = Vector2f(0.0f, 0.0f)) {
     
     Vector2i min = Vector2i((i32)pos.x - (sprite->width/2), (i32)pos.y - (sprite->height/2)) - Vector2i(camera);
