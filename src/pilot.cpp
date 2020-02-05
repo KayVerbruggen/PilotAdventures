@@ -56,12 +56,25 @@ struct Player {
     float max_speed;
 };
 
+
+struct Collision {
+    i32 tile;
+    bool on_ground;
+};
+
 enum {
     EMPTY_TILE,
     GROUND_TILE,
     START_TILE,
     END_TILE,
     COIN_TILE,
+};
+
+enum State {
+    MAIN_MENU,
+    IN_LEVEL,
+    LEVEL_COMPLETE,
+    END,
 };
 
 struct Engine {
@@ -72,6 +85,29 @@ struct Engine {
     bool running;
     f32 delta_time;
     f32 target_time;
+};
+
+#define NUM_LEVELS 3
+struct Game {
+    f32 gravity;
+    Vector2f camera;
+    
+    Player *player;
+    
+    Tile_Map tile_maps[NUM_LEVELS];
+    u32 level;
+    u32 coin_count;
+    
+    Sprite background;
+    Sprite main_menu;
+    Sprite level_complete;
+    Sprite end_game;
+    
+    Sound jump_sound;
+    Sound coin_sound;
+    
+    State state;
+    Collision collision;
 };
 
 static Tile_Map load_tile_map(const char *filename) {
@@ -126,7 +162,7 @@ static Tile_Map load_tile_map(const char *filename) {
 
 static bool test_wall(f32 *t_lowest, f32 wall_coord, f32 wall_min, f32 wall_max, f32 rel_x,
                       f32 rel_y, f32 delta_x, f32 delta_y) {
-    f32 t_epsilon = 0.01f;
+    f32 t_epsilon = 0.1f;
     
     if (delta_x != 0.0f) {
         // Reken uit wanneer de speler de muur raakt coordinaat.
@@ -145,11 +181,6 @@ static bool test_wall(f32 *t_lowest, f32 wall_coord, f32 wall_min, f32 wall_max,
     
     return false;
 }
-
-struct Collision {
-    i32 tile;
-    bool on_ground;
-};
 
 static Collision update_player_position(Tile_Map *tile_map, Player *player, f32 delta_time) {
     Collision result = {};
@@ -200,8 +231,11 @@ static Collision update_player_position(Tile_Map *tile_map, Player *player, f32 
         for (i32 tile_y = min_tile.y; tile_y <= max_tile.y; tile_y++) {
             for (i32 tile_x = min_tile.x; tile_x <= max_tile.x; tile_x++) {
                 
-                if ((tile_x >= 0) && (tile_y >= 0)) {
-                    i32 tile = tile_map->tiles[tile_y * tile_map->width + tile_x];
+                if ((tile_x >= 0) && (tile_y >= 0) &&
+                    (tile_x < tile_map->width) && tile_y < tile_map->height) {
+                    i32 tile_index = tile_y * tile_map->width + tile_x;
+                    i32 tile = tile_map->tiles[tile_index];
+                    
                     if ((tile == GROUND_TILE) || (tile == END_TILE)) {
                         // Reken het midden van de tile uit, en de positie van de speler ten
                         // opzichte van dat midden.
@@ -316,6 +350,136 @@ LRESULT CALLBACK window_callback(HWND window, UINT msg, WPARAM wparam, LPARAM lp
     return result;
 }
 
+void in_level(Engine *engine, Game *game) {
+    Player *player = game->player;
+    
+    if (player->position.x > 1000.0f) {
+        char buffer[256];
+        StringCbPrintfA(buffer, 256, "Player: %f, %f\n", 
+                        player->position.x, player->position.y);
+        OutputDebugStringA(buffer);
+    }
+    
+    // Zwaartekracht en de horizontale beweging door de speler.
+    player->acceleration.x = engine->input.movement * 1000;
+    player->acceleration.y = -game->gravity;
+    
+    // Spring systeem: https://www.youtube.com/watch?v=7KiK0Aqtmzc
+    if (engine->input.jump) {
+        engine->input.jump = false;
+        
+        if (game->collision.on_ground) {
+            player->acceleration.y = 400.0f / engine->delta_time;
+            play_sound(&game->jump_sound);
+        }
+    }
+    
+    if (player->velocity.y > 0.0f) {
+        player->acceleration.y -= game->gravity * 2.0f;
+    } else if (player->velocity.y < 0.0f && !engine->input.space) {
+        player->acceleration.y -= game->gravity;
+    }
+    
+    // Wrijving
+    player->acceleration.x -= player->velocity.x * 5.0f;
+    
+    // Zorg dat we niet boven de maximale snelheid gaan.
+    if (player->velocity.x > player->max_speed) {
+        player->velocity.x = player->max_speed;
+    } else if (player->velocity.x < -player->max_speed) {
+        player->velocity.x = -player->max_speed;
+    }
+    
+    Tile_Map cur_map = game->tile_maps[game->level];
+    game->collision = update_player_position(&cur_map, player, engine->delta_time);
+    {
+        char buffer[256];
+        StringCbPrintfA(buffer, 256, "Player: %f, %f\n", 
+                        player->position.x, player->position.y);
+        OutputDebugStringA(buffer);
+    }
+    game->camera.x = player->position.x - (f32)engine->window.buffer.width / 2.0f;
+    
+    // Ga naar het volgende level als we het level hebben gehaald.
+    // TODO(Kay Verbruggen): Als we het level halen en menu of knop er tussen hebben om verder
+    // te gaan, blijft de delta tijd voorlopig oplopen, misschien moeten we hier een oplossing
+    // voor bedenken. Het kan ook zijn dat het probleem sowieso al niet meer bestaat als we een
+    // in-engine menu hebben.
+    if (game->collision.tile == END_TILE) {
+        
+        player->velocity = Vector2f();
+        
+        engine->window.width = 1920;
+        engine->window.height = 1080;
+        resize_buffer(&engine->window);
+        
+        if (game->level < NUM_LEVELS - 1)
+            game->state = LEVEL_COMPLETE;
+        else
+            game->state = END;
+    }
+    
+    if (((i32)player->position.x <= (cur_map.width * cur_map.tile_size)) && 
+        ((i32)player->position.y <= (cur_map.height * cur_map.tile_size)) &&
+        (player->position.x > 0.0f) && (player->position.y > 0.0f)) {
+        
+        i32 player_tile_pos =
+            (i32)(player->position.y / cur_map.tile_size) * cur_map.width +
+            (i32)(player->position.x / cur_map.tile_size);
+        
+        if (cur_map.tiles[player_tile_pos] == COIN_TILE) {
+            play_sound(&game->coin_sound);
+            game->coin_count++;
+            char buffer[256];
+            StringCbPrintfA(buffer, 256, "Coins: %d\n", game->coin_count);
+            OutputDebugStringA(buffer);
+            cur_map.tiles[player_tile_pos] = EMPTY_TILE;
+        }
+    }
+    
+    draw_sprite(&engine->window, game->camera, &game->background);
+    
+    // De tilemap op het scherm zetten.
+    for (i32 y = 0; y < cur_map.height; y++) {
+        for (i32 x = 0; x < cur_map.width; x++) {
+            i32 tile = cur_map.tiles[y * cur_map.width + x];
+            if (tile == GROUND_TILE) {
+                draw_sprite(&engine->window, game->camera, &cur_map.ground,
+                            Vector2f(f32(x * cur_map.tile_size),
+                                     f32(y * cur_map.tile_size)));
+            } else if (tile == END_TILE) {
+                // TODO: Fix hardcoden van de deur offset op de y-as.
+                draw_sprite(&engine->window, game->camera, &cur_map.end,
+                            Vector2f(f32(x * cur_map.tile_size),
+                                     f32(y * cur_map.tile_size + 20)));
+            } else if (tile == COIN_TILE) {
+                draw_sprite(&engine->window, game->camera, &cur_map.coin,
+                            Vector2f(f32(x * cur_map.tile_size),
+                                     f32(y * cur_map.tile_size)));
+            }
+        }
+    }
+    
+    player->frame += engine->delta_time * player->current_anim.fps;
+    if (player->frame >= 8.0f)
+        player->frame = 0.0f;
+    
+    // Wissel van animatie als de speler van kant wisselt of stopt met lopen.
+    // TODO(Kay Verbruggen): Hardcoded! 
+    if (player->velocity.x > 7.0f) {
+        player->current_anim = player->walk_right;
+    } else if (player->velocity.x < -7.0f) {
+        player->current_anim = player->walk_left;
+    } else {
+        if (player->current_anim.id == WALK_RIGHT)
+            player->current_anim = player->idle_right;
+        else if (player->current_anim.id == WALK_LEFT)
+            player->current_anim = player->idle_left;
+    }
+    
+    draw_sprite(&engine->window, game->camera, &player->current_anim.sprites[(u8)player->frame], player->position);
+}
+
 // Dit is de main functie zoals Windows die gebruikt, dit is nodig om een venster te kunnen openen.
 int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int show_cmd) {
     // Maak de initiële game state.
@@ -357,25 +521,8 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
     
     // Audio.
     initialize_audio(&engine.audio);
-    Sound jump_sound = load_sound(&engine.audio, "assets\\jump.wav");
-    Sound coin_sound = load_sound(&engine.audio, "assets\\coin.wav");
-    
-    // Laad de plaatjes.
-    Sprite background = load_bitmap("assets\\background.bmp");
-    Sprite main_menu = load_bitmap("assets\\main menu.bmp");
-    
-    // Laad de levels.
-    // TODO(Kay Verbruggen): Laad alle levels uit een mapje met FindFirstFile en FindNextFile.
-#define NUM_LEVELS 3
-    i32 level = 0;
-    i32 coin_count = 0;
-    Tile_Map tile_maps[NUM_LEVELS];
-    tile_maps[0] = load_tile_map("levels\\1.bmp");
-    tile_maps[1] = load_tile_map("levels\\2.bmp");
-    tile_maps[2] = load_tile_map("levels\\3.bmp");
     
     Player player = {};
-    player.position = tile_maps[level].start_pos;
     
     // Right animation
     player.walk_right.sprites[0] = load_bitmap("assets\\walk_right\\0.bmp");
@@ -431,8 +578,29 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
     player.width = 33;
     player.height = 56;
     
-    Vector2f camera = Vector2f();
-    Collision col = {};
+    // Fill out the game struct.
+    Game game = {};
+    game.gravity = 500.0f;
+    game.player = &player;
+    game.camera = Vector2f();
+    game.collision = {};
+    game.state = MAIN_MENU;
+    
+    game.jump_sound = load_sound(&engine.audio, "assets\\jump.wav");
+    game.coin_sound = load_sound(&engine.audio, "assets\\coin.wav");
+    
+    // Laad de plaatjes.
+    game.background = load_bitmap("assets\\background large.bmp");
+    game.main_menu = load_bitmap("assets\\main menu.bmp");
+    game.level_complete = load_bitmap("assets\\level complete.bmp");
+    game.end_game = load_bitmap("assets\\end game.bmp");
+    
+    // Laad de levels.
+    // TODO(Kay Verbruggen): Laad alle levels uit een mapje met FindFirstFile en FindNextFile.
+    game.tile_maps[0] = load_tile_map("levels\\1.bmp");
+    game.tile_maps[1] = load_tile_map("levels\\2.bmp");
+    game.tile_maps[2] = load_tile_map("levels\\3.bmp");
+    game.player->position = game.tile_maps[game.level].start_pos;
     
     LARGE_INTEGER frequency;
     QueryPerformanceFrequency(&frequency);
@@ -479,142 +647,97 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
             }
         }
         
-        static bool in_main_menu = true;
-        if (in_main_menu) {
-            camera = Vector2f();
-            draw_sprite(&engine.window, camera, &main_menu, Vector2f(960.0f, 540.0f));
-            
-            POINT cursor;
-            RECT window_dim;
-            GetWindowRect(window, &window_dim);
-            GetCursorPos(&cursor);
-            if ((cursor.x - window_dim.left > 750) && (cursor.x - window_dim.left < 1200) &&
-                (cursor.y - window_dim.top > 450) && (cursor.y - window_dim.top < 650)) {
-                SetCursor(click_cursor);
-                if (engine.input.next) {
-                    in_main_menu = false;
+        switch (game.state) {
+            case MAIN_MENU: {
+                game.camera = Vector2f();
+                draw_sprite(&engine.window, game.camera, &game.main_menu, Vector2f(960.0f, 540.0f));
+                
+                POINT cursor;
+                RECT window_dim;
+                GetWindowRect(window, &window_dim);
+                GetCursorPos(&cursor);
+                
+                if ((cursor.x - window_dim.left > 750) && (cursor.x - window_dim.left < 1200) &&
+                    (cursor.y - window_dim.top > 450) && (cursor.y - window_dim.top < 650)) {
+                    SetCursor(click_cursor);
+                    if (engine.input.next) {
+                        engine.input.next = false;
+                        game.state = IN_LEVEL;
+                        SetCursor(normal_cursor);
+                        engine.window.width = 640;
+                        engine.window.height = 360;
+                        resize_buffer(&engine.window);
+                    }
+                } else {
                     SetCursor(normal_cursor);
-                    engine.window.width = 640;
-                    engine.window.height = 360;
-                    resize_buffer(&engine.window);
                 }
-            } else {
-                SetCursor(normal_cursor);
+                
+                break;
             }
             
-            update_window(&engine.window);
-            continue;
-        }
-        
-        // Game.
-        static f32 gravity = 500.0f;
-        
-        // Zwaartekracht en de horizontale beweging door de speler.
-        player.acceleration.x = engine.input.movement * 1000;
-        player.acceleration.y = -gravity;
-        
-        // Spring systeem: https://www.youtube.com/watch?v=7KiK0Aqtmzc
-        if (engine.input.jump) {
-            engine.input.jump = false;
+            case IN_LEVEL: {
+                in_level(&engine, &game);
+                break;
+            }
             
-            if (col.on_ground) {
-                player.acceleration.y = 400.0f / engine.delta_time;
-                play_sound(&jump_sound);
-            }
-        }
-        
-        if (player.velocity.y > 0.0f) {
-            player.acceleration.y -= gravity * 2.0f;
-        } else if (player.velocity.y < 0.0f && !engine.input.space) {
-            player.acceleration.y -= gravity;
-        }
-        
-        // Wrijving
-        player.acceleration.x -= player.velocity.x * 5.0f;
-        
-        // Zorg dat we niet boven de maximale snelheid gaan.
-        if (player.velocity.x > player.max_speed) {
-            player.velocity.x = player.max_speed;
-        } else if (player.velocity.x < -player.max_speed) {
-            player.velocity.x = -player.max_speed;
-        }
-        
-        Tile_Map current_tile_map = tile_maps[level];
-        col = update_player_position(&current_tile_map, &player, engine.delta_time);
-        camera.x = player.position.x - (f32)engine.window.buffer.width / 2.0f;
-        
-        // Ga naar het volgende level als we het level hebben gehaald.
-        // TODO(Kay Verbruggen): Als we het level halen en menu of knop er tussen hebben om verder
-        // te gaan, blijft de delta tijd voorlopig oplopen, misschien moeten we hier een oplossing
-        // voor bedenken. Het kan ook zijn dat het probleem sowieso al niet meer bestaat als we een
-        // in-engine menu hebben.
-        if (col.tile == END_TILE) {
-            if (level < NUM_LEVELS - 1) {
-                level++;
-                player.velocity = Vector2f();
-                player.position = tile_maps[level].start_pos;
-            } else {
-                MessageBoxA(0, "Je hebt de game uitgespeeld!", "Sucess", MB_OK);
-                engine.running = false;
-            }
-        }
-        
-        i32 player_tile_pos =
-            (i32)(player.position.y / current_tile_map.tile_size) * current_tile_map.width +
-            (i32)(player.position.x / current_tile_map.tile_size);
-        if ((player_tile_pos <= current_tile_map.width * current_tile_map.height) &&
-            (player_tile_pos > 0)) {
-            if (current_tile_map.tiles[player_tile_pos] == COIN_TILE) {
-                play_sound(&coin_sound);
-                coin_count++;
-                char buffer[256];
-                StringCbPrintfA(buffer, 256, "Coins: %d\n", coin_count);
-                OutputDebugStringA(buffer);
-                current_tile_map.tiles[player_tile_pos] = 0;
-            }
-        }
-        
-        draw_sprite(&engine.window, camera, &background);
-        
-        // De tilemap op het scherm zetten.
-        for (i32 y = 0; y < current_tile_map.height; y++) {
-            for (i32 x = 0; x < current_tile_map.width; x++) {
-                i32 tile = current_tile_map.tiles[y * tile_maps[level].width + x];
-                if (tile == GROUND_TILE) {
-                    draw_sprite(&engine.window, camera, &current_tile_map.ground,
-                                Vector2f(f32(x * current_tile_map.tile_size),
-                                         f32(y * current_tile_map.tile_size)));
-                } else if (tile == END_TILE) {
-                    // TODO: Fix hardcoden van de deur offset op de y-as.
-                    draw_sprite(&engine.window, camera, &current_tile_map.end,
-                                Vector2f(f32(x * current_tile_map.tile_size),
-                                         f32(y * current_tile_map.tile_size + 20)));
-                } else if (tile == COIN_TILE) {
-                    draw_sprite(&engine.window, camera, &current_tile_map.coin,
-                                Vector2f(f32(x * current_tile_map.tile_size),
-                                         f32(y * current_tile_map.tile_size)));
+            case LEVEL_COMPLETE: {
+                game.camera = Vector2f();
+                draw_sprite(&engine.window, game.camera, &game.level_complete, Vector2f(960.0f, 540.0f));
+                
+                POINT cursor;
+                RECT window_dim;
+                GetWindowRect(window, &window_dim);
+                GetCursorPos(&cursor);
+                
+                if ((cursor.x - window_dim.left > 750) && (cursor.x - window_dim.left < 1200) &&
+                    (cursor.y - window_dim.top > 450) && (cursor.y - window_dim.top < 650)) {
+                    SetCursor(click_cursor);
+                    if (engine.input.next) {
+                        engine.input.next = false;
+                        game.state = IN_LEVEL;
+                        SetCursor(normal_cursor);
+                        
+                        game.level++;
+                        game.player->position = game.tile_maps[game.level].start_pos;
+                        
+                        engine.window.width = 640;
+                        engine.window.height = 360;
+                        resize_buffer(&engine.window);
+                    }
+                } else {
+                    SetCursor(normal_cursor);
                 }
+                
+                break;
+            }
+            
+            case END: {
+                game.camera = Vector2f();
+                draw_sprite(&engine.window, game.camera, &game.end_game, Vector2f(960.0f, 540.0f));
+                
+                POINT cursor;
+                RECT window_dim;
+                GetWindowRect(window, &window_dim);
+                GetCursorPos(&cursor);
+                
+                if ((cursor.x - window_dim.left > 750) && (cursor.x - window_dim.left < 1200) &&
+                    (cursor.y - window_dim.top > 450) && (cursor.y - window_dim.top < 650)) {
+                    SetCursor(click_cursor);
+                    if (engine.input.next) {
+                        engine.input.next = false;
+                        game.state = MAIN_MENU;
+                        SetCursor(normal_cursor);
+                        
+                        game.level = 0;
+                        game.player->position = game.tile_maps[game.level].start_pos;
+                    }
+                } else {
+                    SetCursor(normal_cursor);
+                }
+                
+                break;
             }
         }
-        
-        player.frame += engine.delta_time * player.current_anim.fps;
-        if (player.frame >= 8.0f)
-            player.frame = 0.0f;
-        
-        // Wissel van animatie als de speler van kant wisselt of stopt met lopen.
-        // TODO(Kay Verbruggen): Hardcoded! 
-        if (player.velocity.x > 7.0f) {
-            player.current_anim = player.walk_right;
-        } else if (player.velocity.x < -7.0f) {
-            player.current_anim = player.walk_left;
-        } else {
-            if (player.current_anim.id == WALK_RIGHT)
-                player.current_anim = player.idle_right;
-            else if (player.current_anim.id == WALK_LEFT)
-                player.current_anim = player.idle_left;
-        }
-        
-        draw_sprite(&engine.window, camera, &player.current_anim.sprites[(u8)player.frame], player.position);
         
         update_window(&engine.window);
         
