@@ -144,15 +144,15 @@ static void draw_sprite(Window *window, Vector2f camera, Sprite *sprite, Vector2
     }
 }
 
-static void resize_buffer(Window *window) {
+static void resize_buffer(Window *window, Vector2i dimensions) {
     // Eerst moeten we het geheugen van de buffer legen als hier al iets in staat.
     if (window->buffer.memory) {
         VirtualFree(window->buffer.memory, 0, MEM_RELEASE);
     }
     
     // Vul de buffer met de nieuwe informatie, voornamelijk de breedte en hoogte.
-    window->buffer.width = window->width;
-    window->buffer.height = window->height;
+    window->buffer.width = dimensions.x;
+    window->buffer.height = dimensions.y;
     
     window->buffer.info.bmiHeader.biSize = sizeof(window->buffer.info.bmiHeader);
     window->buffer.info.bmiHeader.biWidth = window->buffer.width;

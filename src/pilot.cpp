@@ -68,12 +68,14 @@ enum {
     START_TILE,
     END_TILE,
     COIN_TILE,
+    DEATH_TILE
 };
 
 enum State {
     MAIN_MENU,
     IN_LEVEL,
     LEVEL_COMPLETE,
+    LEVEL_FAILED,
     END,
 };
 
@@ -101,6 +103,7 @@ struct Game {
     Sprite background;
     Sprite main_menu;
     Sprite level_complete;
+    Sprite level_failed;
     Sprite end_game;
     
     Sound jump_sound;
@@ -151,6 +154,10 @@ static Tile_Map load_tile_map(const char *filename) {
                 if ((r == 255) && (g == 255) && (b == 0)) {
                     value = COIN_TILE;
                 }
+                
+                if ((r == 255) && (g == 0) && (b == 0)) {
+                    value = DEATH_TILE;
+                }
             }
             
             *tile++ = value;
@@ -162,7 +169,7 @@ static Tile_Map load_tile_map(const char *filename) {
 
 static bool test_wall(f32 *t_lowest, f32 wall_coord, f32 wall_min, f32 wall_max, f32 rel_x,
                       f32 rel_y, f32 delta_x, f32 delta_y) {
-    f32 t_epsilon = 0.1f;
+    f32 t_epsilon = 0.01f;
     
     if (delta_x != 0.0f) {
         // Reken uit wanneer de speler de muur raakt coordinaat.
@@ -236,7 +243,7 @@ static Collision update_player_position(Tile_Map *tile_map, Player *player, f32 
                     i32 tile_index = tile_y * tile_map->width + tile_x;
                     i32 tile = tile_map->tiles[tile_index];
                     
-                    if ((tile == GROUND_TILE) || (tile == END_TILE)) {
+                    if ((tile == GROUND_TILE) || (tile == END_TILE) || (tile == DEATH_TILE)) {
                         // Reken het midden van de tile uit, en de positie van de speler ten
                         // opzichte van dat midden.
                         Vector2f tile_center =
@@ -398,7 +405,10 @@ void in_level(Engine *engine, Game *game) {
                         player->position.x, player->position.y);
         OutputDebugStringA(buffer);
     }
-    game->camera.x = player->position.x - (f32)engine->window.buffer.width / 2.0f;
+    
+    Vector2f target = player->position - Vector2f(engine->window.buffer.width / 2.0f, engine->window.buffer.height / 2.0f);
+    Vector2f delta_camera = (target - game->camera) * 0.1f;
+    game->camera = game->camera + delta_camera;
     
     // Ga naar het volgende level als we het level hebben gehaald.
     // TODO(Kay Verbruggen): Als we het level halen en menu of knop er tussen hebben om verder
@@ -409,21 +419,24 @@ void in_level(Engine *engine, Game *game) {
         
         player->velocity = Vector2f();
         
-        engine->window.width = 1920;
-        engine->window.height = 1080;
-        resize_buffer(&engine->window);
-        free_sprite(&game->background);
+        engine->window.stretch_on_resize = true;
+        resize_buffer(&engine->window, Vector2i(engine->window.width, engine->window.height));
         
         if (game->level < NUM_LEVELS - 1) {
             game->state = LEVEL_COMPLETE;
-            game->level_complete = load_bitmap("assets\\level complete.bmp");
         }
         else {
             game->state = END;
-            game->end_game = load_bitmap("assets\\end game.bmp");
         }
         
         return;
+    }
+    
+    if (game->collision.tile == DEATH_TILE) {
+        engine->window.stretch_on_resize = true;
+        resize_buffer(&engine->window, Vector2i(engine->window.width, engine->window.height));
+        
+        game->state = LEVEL_FAILED;
     }
     
     if (((i32)player->position.x <= (cur_map.width * cur_map.tile_size)) && 
@@ -524,7 +537,7 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
     ShowWindow(window, SW_SHOWDEFAULT);
     
     engine.window.device_context = GetDC(window);
-    resize_buffer(&engine.window);
+    resize_buffer(&engine.window, Vector2i(engine.window.width, engine.window.height));
     
     // Audio.
     initialize_audio(&engine.audio);
@@ -598,6 +611,11 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
     
     // Laad de plaatjes.
     game.main_menu = load_bitmap("assets\\main menu.bmp");
+    game.background = load_bitmap("assets\\background large optimized.bmp");
+    game.level_complete = load_bitmap("assets\\level complete.bmp");
+    game.end_game = load_bitmap("assets\\end game.bmp");
+    game.level_failed = load_bitmap("assets\\level failed.bmp");
+    
     // game.background = load_bitmap("assets\\background large optimized.bmp");
     // game.level_complete = load_bitmap("assets\\level complete.bmp");
     // game.end_game = load_bitmap("assets\\end game.bmp");
@@ -650,22 +668,26 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
             engine.window.height = window_rect.bottom - window_rect.top;
             
             if (!engine.window.stretch_on_resize) {
-                resize_buffer(&engine.window);
+                engine.window.resized = false;
+                resize_buffer(&engine.window, Vector2i(engine.window.width, engine.window.height));
             }
         }
         
         switch (game.state) {
             case MAIN_MENU: {
                 game.camera = Vector2f();
-                draw_sprite(&engine.window, game.camera, &game.main_menu, Vector2f(960.0f, 540.0f));
+                Vector2f center_screen = Vector2f(engine.window.width/2.0f, engine.window.height/2.0f);
+                draw_sprite(&engine.window, game.camera, &game.main_menu, center_screen);
                 
                 POINT cursor;
                 RECT window_dim;
                 GetWindowRect(window, &window_dim);
                 GetCursorPos(&cursor);
                 
-                if ((cursor.x - window_dim.left > 750) && (cursor.x - window_dim.left < 1200) &&
-                    (cursor.y - window_dim.top > 450) && (cursor.y - window_dim.top < 650)) {
+                engine.window.stretch_on_resize = false;
+                
+                if ((cursor.x - window_dim.left > center_screen.x - 200) && (cursor.x - window_dim.left < center_screen.x + 200) &&
+                    (cursor.y - window_dim.top > center_screen.y - 100) && (cursor.y - window_dim.top < center_screen.y + 150)) {
                     SetCursor(click_cursor);
                     if (engine.input.next) {
                         engine.input.next = false;
@@ -673,13 +695,10 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
                         SetCursor(normal_cursor);
                         
                         update_window(&engine.window);
+                        engine.window.stretch_on_resize = true;
                         
-                        engine.window.width = 640;
-                        engine.window.height = 360;
-                        resize_buffer(&engine.window);
+                        resize_buffer(&engine.window, Vector2f(640, 360));
                         
-                        free_sprite(&game.main_menu);
-                        game.background = load_bitmap("assets\\background large optimized.bmp");
                         break;
                     }
                 } else {
@@ -698,31 +717,65 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
             
             case LEVEL_COMPLETE: {
                 game.camera = Vector2f();
-                draw_sprite(&engine.window, game.camera, &game.level_complete, Vector2f(960.0f, 540.0f));
+                Vector2f center_screen = Vector2f(engine.window.width/2.0f, engine.window.height/2.0f);
+                draw_sprite(&engine.window, game.camera, &game.level_complete, center_screen);
                 
                 POINT cursor;
                 RECT window_dim;
                 GetWindowRect(window, &window_dim);
                 GetCursorPos(&cursor);
                 
-                if ((cursor.x - window_dim.left > 750) && (cursor.x - window_dim.left < 1200) &&
-                    (cursor.y - window_dim.top > 450) && (cursor.y - window_dim.top < 650)) {
+                if ((cursor.x - window_dim.left > center_screen.x - 200) && (cursor.x - window_dim.left < center_screen.x + 200) &&
+                    (cursor.y - window_dim.top > center_screen.y - 100) && (cursor.y - window_dim.top < center_screen.y + 150)) {
                     SetCursor(click_cursor);
                     if (engine.input.next) {
                         engine.input.next = false;
                         game.state = IN_LEVEL;
                         SetCursor(normal_cursor);
+                        engine.window.stretch_on_resize = true;
                         
                         game.level++;
                         game.player->position = game.tile_maps[game.level].start_pos;
                         
                         update_window(&engine.window);
                         
-                        engine.window.width = 640;
-                        engine.window.height = 360;
-                        resize_buffer(&engine.window);
+                        resize_buffer(&engine.window, Vector2f(640, 360));
                         
-                        free_sprite(&game.level_complete);
+                        break;
+                    }
+                } else {
+                    SetCursor(normal_cursor);
+                }
+                
+                update_window(&engine.window);
+                break;
+            }
+            
+            case LEVEL_FAILED: {
+                game.camera = Vector2f();
+                Vector2f center_screen = Vector2f(engine.window.width/2.0f, engine.window.height/2.0f);
+                draw_sprite(&engine.window, game.camera, &game.level_failed, center_screen);
+                
+                POINT cursor;
+                RECT window_dim;
+                GetWindowRect(window, &window_dim);
+                GetCursorPos(&cursor);
+                
+                if ((cursor.x - window_dim.left > center_screen.x - 200) && (cursor.x - window_dim.left < center_screen.x + 200) &&
+                    (cursor.y - window_dim.top > center_screen.y - 100) && (cursor.y - window_dim.top < center_screen.y + 150)) {
+                    SetCursor(click_cursor);
+                    if (engine.input.next) {
+                        engine.input.next = false;
+                        game.state = IN_LEVEL;
+                        SetCursor(normal_cursor);
+                        engine.window.stretch_on_resize = true;
+                        
+                        game.player->position = game.tile_maps[game.level].start_pos;
+                        game.player->velocity = Vector2f();
+                        
+                        update_window(&engine.window);
+                        resize_buffer(&engine.window, Vector2f(640, 360));
+                        
                         game.background = load_bitmap("assets\\background large optimized.bmp");
                         break;
                     }
@@ -736,25 +789,25 @@ int WinMain(HINSTANCE instance, HINSTANCE prev_instance, LPSTR cmd_line, int sho
             
             case END: {
                 game.camera = Vector2f();
-                draw_sprite(&engine.window, game.camera, &game.end_game, Vector2f(960.0f, 540.0f));
+                Vector2f center_screen = Vector2f(engine.window.width/2.0f, engine.window.height/2.0f);
+                draw_sprite(&engine.window, game.camera, &game.end_game, center_screen);
+                
                 
                 POINT cursor;
                 RECT window_dim;
                 GetWindowRect(window, &window_dim);
                 GetCursorPos(&cursor);
                 
-                if ((cursor.x - window_dim.left > 750) && (cursor.x - window_dim.left < 1200) &&
-                    (cursor.y - window_dim.top > 450) && (cursor.y - window_dim.top < 650)) {
+                if ((cursor.x - window_dim.left > center_screen.x - 200) && (cursor.x - window_dim.left < center_screen.x + 200) &&
+                    (cursor.y - window_dim.top > center_screen.y - 100) && (cursor.y - window_dim.top < center_screen.y + 150)) {
                     SetCursor(click_cursor);
                     if (engine.input.next) {
                         engine.input.next = false;
                         game.state = MAIN_MENU;
-                        game.main_menu = load_bitmap("assets\\main menu.bmp");
                         SetCursor(normal_cursor);
                         
                         game.level = 0;
                         game.player->position = game.tile_maps[game.level].start_pos;
-                        free_sprite(&game.end_game);
                     }
                 } else {
                     SetCursor(normal_cursor);
