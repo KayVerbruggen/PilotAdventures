@@ -4,19 +4,21 @@ struct Input {
     bool jump;
     bool use_gamepad;
     bool next;
+    bool quit;
+    bool click;
 };
 
 // NOTE(Kay Verbruggen): += bij key_down en key_up, om te voorkomen dat je stil staat,
 // bijvoorbeeld als je D loslaat maar A nog in hebt gehouden.
 static void process_key_down(Input *input, u32 key) {
     if (key == VK_LEFT || key == 'A') {
-        input->movement += -1.0f;
+        input->movement -= 1.0f;
     }
-    
+
     if (key == VK_RIGHT || key == 'D') {
         input->movement += 1.0f;
     }
-    
+
     if (key == VK_SPACE || key == 'W' || key == VK_UP) {
         input->space = true;
         input->jump = true;
@@ -27,32 +29,46 @@ static void process_key_up(Input *input, u32 key) {
     if (key == VK_LEFT || key == 'A') {
         input->movement += 1.0f;
     }
-    
+
     if (key == VK_RIGHT || key == 'D') {
-        input->movement += -1.0f;
+        input->movement -= 1.0f;
     }
-    
+
     if (key == VK_SPACE || key == 'W' || key == VK_UP) {
         input->space = false;
+        input->jump = false;
     }
 }
 
 static void process_gamepad_input(Input *input) {
     // Loop door alle mogelijke controllers, er kunnen er vier zijn aangesloten.
+    input->use_gamepad = false;
+
     for (DWORD i = 0; i < XUSER_MAX_COUNT; i++) {
         XINPUT_STATE controller_state = {};
-        
+
         // Als dit lukt dan is de controller verbonden.
         if (XInputGetState(i, &controller_state) == ERROR_SUCCESS) {
+            input->use_gamepad = true;
+
             // Knoppen.
             if (!input->space && (controller_state.Gamepad.wButtons & XINPUT_GAMEPAD_A)) {
                 input->jump = true;
+                input->next = true;
+            } else {
+                input->jump = false;
+                input->next = false;
             }
-            
+
             input->space = controller_state.Gamepad.wButtons & XINPUT_GAMEPAD_A;
-            
+
+            if (!input->quit && (controller_state.Gamepad.wButtons & XINPUT_GAMEPAD_B))
+                input->quit = true;
+            else
+                input->quit = false;
+
             input->movement = 0.0f;
-            
+
             // NOTE(Kay Verbruggen): Uitleg deadzone.
             // Check de stickjes van de controller. Hiervoor moet je gebruik maken van een
             // deadzone. Dat wil zeggen dat pas wanneer de stickjes meer dan een bepaalde
@@ -65,10 +81,16 @@ static void process_gamepad_input(Input *input) {
             if (controller_state.Gamepad.sThumbLX < -XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE) {
                 input->movement = (f32)controller_state.Gamepad.sThumbLX / 32767.0f;
             }
-            
+
+            if (controller_state.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_LEFT) {
+                input->movement = -1;
+            }
+            if (controller_state.Gamepad.wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) {
+                input->movement = 1;
+            }
         } else {
-            // TODO(Kay Verbruggen): Moeten we de speler een waarschuwing geven als controllers niet meer
-            // verbonden zijn?
+            // TODO(Kay Verbruggen): Moeten we de speler een waarschuwing geven als controllers niet
+            // meer verbonden zijn?
         }
     }
 }
